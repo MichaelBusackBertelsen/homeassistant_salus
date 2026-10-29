@@ -1,6 +1,9 @@
 {
   "domain": "salus",
   "name": "Salus iT600",
+  "after_dependencies": [
+    "logbook"
+  ],
   "codeowners": [
     "@MichaelBusackBertelsen"
   ],

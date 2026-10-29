@@ -446,7 +446,7 @@ class SalusRoomCard extends HTMLElement {
     this._nodes["comfort-timing"].title=timing.comfort_last_reason || "Tidspunkter viser Home Assistants registrering; næste vurdering er ikke et løfte om slukning.";
     this._nodes["comfort-activity"].hidden=!comfortConfigured;
     const evidence=timing.comfort_start_evidence;
-    const evidenceText=evidence && Number.isFinite(evidence.temperature_c) ? `Startgrundlag: ${this._format(evidence.temperature_c)} °C${when(evidence.minimum_at) ? ` ved ${when(evidence.minimum_at)}` : ""}; tændgrænse: under ${this._format(evidence.start_below_c)} °C.` : "";
+    const evidenceText=evidence && Number.isFinite(evidence.temperature_c) ? `Startgrundlag: ${this._format(evidence.temperature_c)} °C${when(evidence.minimum_at) ? ` ved ${when(evidence.minimum_at)}` : ""}; tændgrænse: under ${this._format(evidence.start_below_c)} °C.` : Number.isFinite(timing.comfort_start_temperature_c) ? `Gemt temperaturgrundlag ved start: ${this._format(timing.comfort_start_temperature_c)} °C. Prognosens tidspunkt og daværende grænse blev ikke gemt i den ældre version.` : "";
     this._nodes["comfort-reason"].textContent=[period && level>0 ? `${timing.comfort_adopted ? "Reglen overtog aktiv komfort" : "Regelperioden begyndte"}: ${period}.` : "",timing.comfort_last_reason,evidenceText].filter(Boolean).join(" ");
     this._nodes["comfort-reason"].hidden=!comfortConfigured || !this._nodes["comfort-reason"].textContent;
     this._nodes.floor.dataset.configured=String(comfortConfigured);

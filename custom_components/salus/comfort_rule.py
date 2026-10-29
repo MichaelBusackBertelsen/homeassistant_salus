@@ -267,6 +267,7 @@ class ComfortRules:
             "comfort_last_reason": record.get("last_reason"),
             "comfort_adopted": record.get("adopted", False),
             "comfort_start_evidence": record.get("start_evidence"),
+            "comfort_start_temperature_c": record.get("start_trigger_temperature_c"),
         }
 
     async def async_room_limits(self, climate_entity: str) -> None:
