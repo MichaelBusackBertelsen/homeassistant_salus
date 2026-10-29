@@ -1,4 +1,4 @@
-/* SALUS Room Card 1.4.0 — MIT License. Bundled with the SALUS integration. */
+/* SALUS Room Card 1.4.1 — MIT License. Bundled with the SALUS integration. */
 async function registerSalusRoomCard() {
 // Extra modules can run before HA installs its scoped custom element registry.
 // Wait before defining classes as well: the polyfill replaces HTMLElement too.
@@ -33,7 +33,7 @@ class SalusRoomCard extends HTMLElement {
         :host {display:block;min-width:0;container-type:inline-size;}
         * {box-sizing:border-box;}
         ha-card {display:grid;grid-template-columns:minmax(0,1fr) 128px;gap:0 10px;
-          grid-template-areas:"head head" "actual target" "floor floor" "timing timing" "status status" "error error" "history history";
+          grid-template-areas:"head head" "actual target" "floor floor" "status status" "error error" "history history";
           padding:10px 12px;border-radius:14px;background:var(--ha-card-background,var(--card-background-color,#1c2023));
           color:var(--primary-text-color,#f1f2f2);border:1px solid var(--divider-color,#303639);box-shadow:none;
           font-family:var(--paper-font-body1_-_font-family,Roboto,sans-serif);}
@@ -89,7 +89,10 @@ class SalusRoomCard extends HTMLElement {
         :host([layout="rows"]) .compact-caption {display:none;}
         :host([layout="rows"]) .row-caption {display:inline;}
         .status {grid-area:status;font-size:12px;color:var(--secondary-text-color);overflow-wrap:anywhere;margin-top:6px;}
-        .comfort-timing {grid-area:timing;display:flex;flex-wrap:wrap;gap:2px 16px;font-size:11px;line-height:1.5;color:var(--secondary-text-color);min-width:0;overflow-wrap:anywhere;}
+        .comfort-details {padding:10px 12px;margin-bottom:10px;border-radius:10px;background:var(--secondary-background-color,#252b2e);font-size:12px;line-height:1.5;overflow-wrap:anywhere;}
+        .comfort-details-head {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;}
+        .comfort-timing {display:flex;flex-direction:column;gap:3px;min-width:0;color:var(--secondary-text-color);}
+        .comfort-details .history-message {margin-top:7px;}
         .error {grid-area:error;font-size:12px;color:var(--error-color,#db6060);overflow-wrap:anywhere;margin-top:6px;}
         .history {position:relative;grid-area:history;min-width:0;margin-top:3px;padding-top:8px;border-top:1px solid var(--divider-color);}
         .history-head {display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;color:var(--secondary-text-color);}
@@ -112,7 +115,7 @@ class SalusRoomCard extends HTMLElement {
         .swatch.heat-swatch {height:6px;border:0;background:var(--salus-comfort-color,#edaa70);opacity:.75;}
         @container (min-width:580px) {
           :host([layout="rows"]) ha-card {grid-template-columns:16px minmax(100px,1.2fr) minmax(72px,1fr) minmax(110px,1fr) minmax(100px,1fr) 28px;gap:0 6px;padding:10px;
-            grid-template-areas:"icon name actual target floor toggle" "icon humid actual target floor toggle" "timing timing timing timing timing timing" "status status status status status status" "error error error error error error" "history history history history history history";}
+            grid-template-areas:"icon name actual target floor toggle" "icon humid actual target floor toggle" "status status status status status status" "error error error error error error" "history history history history history history";}
           :host([layout="rows"]) header {display:contents;}
           :host([layout="rows"]) #icon {grid-area:icon;align-self:center;flex:0 0 16px;}
           :host([layout="rows"]) h2 {grid-area:name;align-self:end;font-size:13px;}
@@ -159,12 +162,14 @@ class SalusRoomCard extends HTMLElement {
           </div>
           <select id="floor-select" class="floor-select" aria-label="Gulvkomfort"><option value="" disabled>Utilgængelig</option><option value="0">Fra</option><option value="1">Niveau 1</option><option value="2">Niveau 2</option><option value="3">Niveau 3</option></select>
         </div>
-        <div id="comfort-timing" class="comfort-timing" hidden><span id="comfort-start"></span><span id="comfort-next"></span></div>
         <div id="status" class="status" role="status" aria-live="polite" hidden></div>
         <div id="error" class="error" role="alert" hidden></div>
         <section id="history" class="history" aria-label="Temperatur og varmebehov" hidden>
-          <div id="comfort-reason" class="history-message" hidden></div>
-          <button id="comfort-activity" class="history-refresh" type="button" hidden>Aktivitet for Gulvkomfort</button>
+          <section id="comfort-details" class="comfort-details" aria-label="Gulvkomfort – status og timer" hidden>
+            <div class="comfort-details-head"><strong title="SALUS rumkort 1.4.1">Gulvkomfort – status og timer</strong><button id="comfort-activity" class="history-refresh" type="button" hidden>Aktivitet for Gulvkomfort</button></div>
+            <div id="comfort-timing" class="comfort-timing" hidden><span id="comfort-start"></span><span id="comfort-period" hidden></span><span id="comfort-next"></span></div>
+            <div id="comfort-reason" class="history-message" hidden></div>
+          </section>
           <div class="history-head"><span id="history-title">Seneste 48 timer</span><button id="history-refresh" class="history-refresh" type="button">Opdater</button></div>
           <div id="history-message" class="history-message" role="status" hidden></div>
           <svg id="history-chart" class="history-chart" role="img" aria-label="Temperatur, ønsket temperatur og termostatens varmebehov" hidden></svg>
@@ -366,6 +371,7 @@ class SalusRoomCard extends HTMLElement {
     const detail=this._nodes["history-detail"];
     detail.textContent=`${this._historyDate(point.time)} ${this._historyTime(point.time)} · ${this._format(point.temperature)}° · ønsket ${this._format(point.target)}° · ${point.heat===null?"Ukendt varmebehov":point.heat===1?"Kalder på varme":"Intet varmebehov"}`;
     detail.hidden=false;
+    detail.style.top=`${rect.top-this._nodes.history.getBoundingClientRect().top+10}px`;
     detail.style.left=`${Math.max(0,Math.min(this._nodes.history.clientWidth-detail.offsetWidth,event.clientX-rect.left-80))}px`;
   }
 
@@ -440,14 +446,17 @@ class SalusRoomCard extends HTMLElement {
     };
     const on=when(timing.comfort_observed_on_at),off=when(timing.comfort_last_off_at);
     const period=when(timing.comfort_period_started_at),next=when(timing.comfort_next_check_at);
+    this._nodes["comfort-details"].hidden=!comfortConfigured;
     this._nodes["comfort-start"].textContent=level>0 ? (on ? `${timing.comfort_on_time_basis==="already_active" ? "Opdaget tændt" : "Tændt registreret"}: ${on}` : period ? `Regelperiode fra: ${period}` : "Tændingstid ikke registreret") : level===0 && off ? `Slukket registreret: ${off}` : "";
     this._nodes["comfort-next"].textContent=level>0 ? (timing.comfort_automation_enabled===false && timing.comfort_rule ? "Automatik pauset" : next ? `Næste vurdering: ${next}` : ["starting","uncertain_start"].includes(timing.comfort_phase) ? "Afventer bekræftet regelstart" : ["stopping","uncertain_stop"].includes(timing.comfort_phase) ? "Afventer bekræftet slukning" : "Ingen planlagt stopvurdering") : "";
     this._nodes["comfort-timing"].hidden=!comfortConfigured || level<0 || !Object.hasOwn(timing,"comfort_phase");
     this._nodes["comfort-timing"].title=timing.comfort_last_reason || "Tidspunkter viser Home Assistants registrering; næste vurdering er ikke et løfte om slukning.";
+    this._nodes["comfort-period"].textContent=period ? `${timing.comfort_adopted ? "Automatik overtog aktiv komfort" : "Regelperiode startet"}: ${period}` : "";
+    this._nodes["comfort-period"].hidden=!period || level<=0;
     this._nodes["comfort-activity"].hidden=!comfortConfigured;
     const evidence=timing.comfort_start_evidence;
-    const evidenceText=evidence && Number.isFinite(evidence.temperature_c) ? `Startgrundlag: ${this._format(evidence.temperature_c)} °C${when(evidence.minimum_at) ? ` ved ${when(evidence.minimum_at)}` : ""}; tændgrænse: under ${this._format(evidence.start_below_c)} °C.` : Number.isFinite(timing.comfort_start_temperature_c) ? `Gemt temperaturgrundlag ved start: ${this._format(timing.comfort_start_temperature_c)} °C. Prognosens tidspunkt og daværende grænse blev ikke gemt i den ældre version.` : "";
-    this._nodes["comfort-reason"].textContent=[period && level>0 ? `${timing.comfort_adopted ? "Reglen overtog aktiv komfort" : "Regelperioden begyndte"}: ${period}.` : "",timing.comfort_last_reason,evidenceText].filter(Boolean).join(" ");
+    const evidenceText=evidence && Number.isFinite(evidence.temperature_c) ? `${evidence.source_mode==="forecast" ? "Prognosen viste" : "Startgrundlag"}: ${this._format(evidence.temperature_c)} °C${when(evidence.minimum_at) ? ` ved ${when(evidence.minimum_at)}` : ""}; tændgrænse: under ${this._format(evidence.start_below_c)} °C.${Object.hasOwn(evidence,"outdoor_at_start_c") ? ` Ude ved start: ${Number.isFinite(evidence.outdoor_at_start_c) ? `${this._format(evidence.outdoor_at_start_c)} °C` : "ukendt"}.` : ""}${when(evidence.fetched_at) ? ` Prognose hentet: ${when(evidence.fetched_at)}.` : ""}` : Number.isFinite(timing.comfort_start_temperature_c) ? `Gemt temperaturgrundlag ved start: ${this._format(timing.comfort_start_temperature_c)} °C. Prognosens tidspunkt og daværende grænse blev ikke gemt i den ældre version.` : "";
+    this._nodes["comfort-reason"].textContent=[timing.comfort_last_reason,evidenceText].filter(Boolean).join(" ") || (Object.hasOwn(timing,"comfort_phase") ? "Ingen gemt regelbeslutning for dette rum endnu. Aktivitet viser de registrerede ændringer." : "Ingen tidsoplysninger modtaget. Opdatér SALUS-integrationen og genstart Home Assistant.");
     this._nodes["comfort-reason"].hidden=!comfortConfigured || !this._nodes["comfort-reason"].textContent;
     this._nodes.floor.dataset.configured=String(comfortConfigured);
     this._nodes.floor.dataset.active = String(level > 0);

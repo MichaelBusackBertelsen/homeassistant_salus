@@ -1,3 +1,9 @@
+NYT I b15: Alle komforttider og begrundelser vises kun, når kortet er foldet ud.
+Klik på kortet/pilen → Gulvkomfort – status og timer over grafen.
+Her ses registreret tænding, regelstart, næste vurdering og gemt startgrundlag.
+Aktivitet for Gulvkomfort åbner den pågældende entitets historik.
+Opdatér b15, genstart HA og brug Ctrl+F5 i browseren. Ingen blueprint-import kræves.
+
 NYT I b14: Kortet viser registreret tænding og næste stopvurdering med dato/klokkeslæt.
 Ved allerede aktiv enhed vises Opdaget tændt; det oprindelige tidspunkt er ukendt.
 Fold kortet ud → Aktivitet for Gulvkomfort åbner rummets egen aktivitet.

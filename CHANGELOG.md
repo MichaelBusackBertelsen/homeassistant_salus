@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.11b15 - 2026-10-29
+
+- Show all comfort timing and decision details only inside the expanded room
+  card, grouped above the history chart. Keep collapsed cards compact.
+- Display saved outdoor-at-start and forecast-fetch timestamps with the start
+  evidence; keep the entity Activity shortcut in the expanded panel.
+- Bump card registration to 1.4.1 and test collapsed/expanded visibility,
+  narrow layouts and chart tooltip placement. No controller logic changes.
+
 ## 0.9.11b14 - 2026-10-29
 
 - Expose persistent observed on/off timestamps, rule period and next evaluation

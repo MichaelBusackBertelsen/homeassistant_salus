@@ -268,18 +268,30 @@ const output=path.join(root,'.dashboard-test-output');fs.mkdirSync(output,{recur
    card.addEventListener('hass-more-info',event=>moreInfo.push(event.detail.entityId));
    Object.assign(data.states['select.test'].attributes,{comfort_phase:'running',comfort_rule:'automation.test',comfort_automation_enabled:true,
     comfort_observed_on_at:'2026-10-29T14:35:15+01:00',comfort_on_time_basis:'observed_transition',
+    comfort_period_started_at:'2026-10-29T14:35:15+01:00',
     comfort_next_check_at:'2026-10-29T20:35:15+01:00',comfort_last_reason:'Minimumperioden løber.',
     comfort_start_evidence:{temperature_c:7.5,start_below_c:8,minimum_at:'2026-10-29T21:00:00+01:00'}});
    data.callApi=async()=>historyRows;card.hass=data;
   });
   if(!/14[.:]35/.test(await card.locator('#comfort-start').textContent()))throw Error('Missing observed start');
   if(!/20[.:]35/.test(await card.locator('#comfort-next').textContent()))throw Error('Missing next check');
+  if(!await card.locator('#comfort-timing').isHidden())throw Error('Timing leaked into collapsed card');
+  if(!await card.locator('#comfort-details').isHidden())throw Error('Details leaked into collapsed card');
   if(!await card.locator('#comfort-activity').isHidden())throw Error('Activity should be collapsed');
   await card.locator('#history-toggle').click();
+  if(!await card.locator('#comfort-timing').isVisible())throw Error('Expanded timing missing');
+  if(!await card.locator('#comfort-details').isVisible())throw Error('Expanded details missing');
+  if(!await card.locator('#comfort-period').isVisible())throw Error('Missing rule period');
   if(!(await card.locator('#comfort-reason').textContent()).includes('7,5'))throw Error('Missing trigger evidence');
   await card.locator('#comfort-activity').click();
   if(JSON.stringify(await page.evaluate(()=>moreInfo))!=='["select.test"]')throw Error('Wrong activity entity');
+  for(const width of [320,390,900]){
+   await page.evaluate(width=>{card.style.width=width+'px';},width);
+   if(await card.evaluate(el=>el.shadowRoot.querySelector('ha-card').scrollWidth>el.clientWidth+1))throw Error('Expanded timing overflow '+width);
+  }
+  await card.screenshot({path:path.join(output,'comfort-expanded-preview.png')});
   await card.locator('#history-toggle').click();
+  if(!await card.locator('#comfort-timing').isHidden())throw Error('Timing remained after collapse');
   for(const width of [320,390,1000]){
    await page.evaluate(width=>{card.style.width=width+'px';},width);
    if(await card.evaluate(el=>el.shadowRoot.querySelector('ha-card').scrollWidth>el.clientWidth+1))throw Error('Timing overflow '+width);

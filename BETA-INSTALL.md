@@ -1,4 +1,20 @@
-# SALUS beta 0.9.11b14
+# SALUS beta 0.9.11b15
+
+## New in b15: comfort details only when expanded
+
+The collapsed room card keeps its compact measurement/control layout. Click the
+card or chevron to reveal **Gulvkomfort – status og timer** above the history
+chart. This panel contains the observed start, rule period start, next evaluation,
+decision explanation and Activity shortcut. New-cycle evidence also shows the
+outdoor temperature at start and when the forecast was fetched, if saved.
+Missing evidence from older cycles is not reconstructed.
+
+Update b15 in HACS, restart HA and fully reload the dashboard browser (Ctrl+F5
+on Windows). The bundled card version is 1.4.1; its registration URL is updated.
+No blueprint re-import is needed. Start/stop rules and timers are unchanged.
+Recorder retains Activity according to the installation's filters and
+purge_keep_days setting (the Home Assistant default is 10 days). This update
+does not change that installation-wide retention setting.
 
 ## New in b14: per-room timing and decision activity
 
