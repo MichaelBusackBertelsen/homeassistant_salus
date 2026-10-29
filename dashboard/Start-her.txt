@@ -1,4 +1,10 @@
-SALUS rumkort – indbygget i beta 0.9.11b13
+NYT I b14: Kortet viser registreret tænding og næste stopvurdering med dato/klokkeslæt.
+Ved allerede aktiv enhed vises Opdaget tændt; det oprindelige tidspunkt er ukendt.
+Fold kortet ud → Aktivitet for Gulvkomfort åbner rummets egen aktivitet.
+Her forklares nye starter, forlængelser og stop. Gamle begrundelser kan ikke genskabes.
+Opdatér b14, genstart HA og genindlæs browseren. Ingen ny blueprint-import kræves.
+
+SALUS rumkort – indbygget i beta 0.9.11b14
 
 Gulvkomfort er nu valgfri: vælg Ingen gulvkomfort i kortets editor.
 Temperaturbetjening og historik virker stadig; kun gulvbetjeningen deaktiveres.
@@ -15,7 +21,7 @@ Valg af layout sætter forslag til halv/fuld bredde med automatisk højde.
 Vælg layout én gang på et gammelt kort for at anvende det nye breddeforslag.
 Grafen er skjult, indtil du klikker på kortet eller pilen.
 
-Opdatér SALUS-integrationen via HACS til v0.9.11b13 og genstart Home Assistant.
+Opdatér SALUS-integrationen via HACS til v0.9.11b14 og genstart Home Assistant.
 Genindlæs derefter browseren/Home Assistant-appen.
 
 Åbn dit eget dashboard → Rediger → Tilføj kort → søg efter SALUS rumkort.

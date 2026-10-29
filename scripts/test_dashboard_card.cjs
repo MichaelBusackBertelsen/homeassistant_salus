@@ -261,6 +261,41 @@ const output=path.join(root,'.dashboard-test-output');fs.mkdirSync(output,{recur
   await page.evaluate(()=>{card.setConfig({climate:'climate.test',comfort:'select.missing'});data=sample();card.hass=data;});
   if(await card.locator('#status').isHidden())throw Error('Explicit missing ID silently ignored');
  });
+ await check('Per-room comfort timestamps, paused timers and entity activity',async()=>{
+  await page.evaluate(()=>{
+   card.style.width='';card.setConfig({climate:'climate.test',comfort:'select.test',layout:'rows'});data=sample();
+   data.config.time_zone='Europe/Copenhagen';calls=[];window.moreInfo=[];
+   card.addEventListener('hass-more-info',event=>moreInfo.push(event.detail.entityId));
+   Object.assign(data.states['select.test'].attributes,{comfort_phase:'running',comfort_rule:'automation.test',comfort_automation_enabled:true,
+    comfort_observed_on_at:'2026-10-29T14:35:15+01:00',comfort_on_time_basis:'observed_transition',
+    comfort_next_check_at:'2026-10-29T20:35:15+01:00',comfort_last_reason:'Minimumperioden løber.',
+    comfort_start_evidence:{temperature_c:7.5,start_below_c:8,minimum_at:'2026-10-29T21:00:00+01:00'}});
+   data.callApi=async()=>historyRows;card.hass=data;
+  });
+  if(!/14[.:]35/.test(await card.locator('#comfort-start').textContent()))throw Error('Missing observed start');
+  if(!/20[.:]35/.test(await card.locator('#comfort-next').textContent()))throw Error('Missing next check');
+  if(!await card.locator('#comfort-activity').isHidden())throw Error('Activity should be collapsed');
+  await card.locator('#history-toggle').click();
+  if(!(await card.locator('#comfort-reason').textContent()).includes('7,5'))throw Error('Missing trigger evidence');
+  await card.locator('#comfort-activity').click();
+  if(JSON.stringify(await page.evaluate(()=>moreInfo))!=='["select.test"]')throw Error('Wrong activity entity');
+  await card.locator('#history-toggle').click();
+  for(const width of [320,390,1000]){
+   await page.evaluate(width=>{card.style.width=width+'px';},width);
+   if(await card.evaluate(el=>el.shadowRoot.querySelector('ha-card').scrollWidth>el.clientWidth+1))throw Error('Timing overflow '+width);
+  }
+  await page.evaluate(()=>{data.states['select.test'].attributes.comfort_automation_enabled=false;data.states['select.test'].attributes.comfort_next_check_at=null;card.hass=data;});
+  if(await card.locator('#comfort-next').textContent()!=='Automatik pauset')throw Error('Paused deadline promise');
+  await page.evaluate(()=>{data.states['select.test'].attributes.comfort_on_time_basis='already_active';card.hass=data;});
+  if(!(await card.locator('#comfort-start').textContent()).startsWith('Opdaget tændt'))throw Error('Invented original start');
+  await page.evaluate(()=>{data.states['select.test'].state='off';data.states['select.test'].attributes.comfort_last_off_at='2026-10-29T21:01:00+01:00';card.hass=data;});
+  if(!(await card.locator('#comfort-start').textContent()).startsWith('Slukket registreret'))throw Error('Missing Off timestamp');
+  if(await card.locator('#comfort-next').textContent())throw Error('Off still has next check');
+  await page.evaluate(()=>{data.states['select.test'].state='unavailable';card.hass=data;});
+  if(!await card.locator('#comfort-timing').isHidden())throw Error('Unavailable claims active timing');
+  if(await page.evaluate(()=>calls.length)!==0)throw Error('Diagnostics dispatched command');
+  await page.evaluate(()=>{card.style.width='';});
+ });
  await check('Seven room cards and responsive layouts',async()=>{
   await page.evaluate(()=>{
    card.setConfig({climate:'climate.test',comfort:'select.test',name:'Stuen',icon:'mdi:sofa-outline'});data=sample();card.hass=data;

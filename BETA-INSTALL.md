@@ -1,4 +1,33 @@
-# SALUS beta 0.9.11b13
+# SALUS beta 0.9.11b14
+
+## New in b14: per-room timing and decision activity
+
+Room cards show the observed active timestamp (date and time) and the next
+scheduled stop evaluation. An already-active device is labelled as discovered
+active; its original physical start time is unknown. The rule's protected-period
+start remains a separate timestamp. Disabled automation is shown as paused,
+not as a promise to stop at an expired deadline. Timing is also exposed as
+attributes on the existing floor-comfort select, without creating new entities.
+
+Expand a room card and choose **Aktivitet for Gulvkomfort** to open that exact
+entity. Native HA Activity now records requested starts/stops, observed changes,
+manual adoption, confirmed rule start, extensions and cooldown. Requested and
+confirmed changes are separate. Start messages include forecast minimum and
+its timestamp, forecast fetch time, threshold, current outdoor reading and rule.
+Repeated minute evaluations do not add duplicate progress messages. Events use
+Home Assistant Recorder/Activity retention and include/exclude settings.
+
+The current cycle's start evidence is saved with its per-room state. Observation
+timestamps survive restart and unavailable gaps; level changes preserve the
+active timestamp. Existing b13 cycles have their saved rule times, but missing
+historical evidence and decisions cannot be reconstructed. No past Activity
+entries are invented by this update.
+
+Update b14 in HACS, restart HA and reload the browser. No blueprint re-import
+is needed for these display/logging additions. The weather rule and client
+write protocol are unchanged. This update does not establish why any earlier
+specific cycle started; inspect its saved start_trigger_temperature_c if needed.
+Tests use simulated entities and weather; no real gateway writes were performed.
 
 ## New in b13: immediate upper room-temperature stop
 

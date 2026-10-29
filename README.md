@@ -1,4 +1,4 @@
-> **Fork beta 0.9.11b13:** includes the auto-loaded **SALUS rumkort** card,
+> **Fork beta 0.9.11b14:** includes the auto-loaded **SALUS rumkort** card,
 > graphical editor, click-only temperature/heat-demand history, enabled floor
 > entities and reviewed command/backup handling. [Install and use](BETA-INSTALL.md).
 > Counter metadata is device-owned; actual hardware rollover remains unobserved.

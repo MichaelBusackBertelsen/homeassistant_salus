@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.11b14 - 2026-10-29
+
+- Expose persistent observed on/off timestamps, rule period and next evaluation
+  as floor-select attributes and on compact/row cards. Show paused/unknown status
+  without inventing a physical switch-on time or promising automatic stop.
+- Add per-entity Activity explanations for starts, adoption, confirmations,
+  extensions, stops and observed device changes. Save start forecast evidence.
+- Add an Activity shortcut to expanded room cards. No changes to start/stop
+  thresholds, timers, protected periods or client protocol.
+- History begins with this update; older decisions cannot be reconstructed.
+
 ## Unreleased
 
 - Add an experimental Comfort Warm Floor select with Off/1/2/3 for profiles

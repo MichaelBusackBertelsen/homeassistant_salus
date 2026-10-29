@@ -13,10 +13,12 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
+from homeassistant.components.logbook import async_log_entry
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er, issue_registry as ir
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.start import async_at_start
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util.file import write_utf8_file_atomic
 from homeassistant.util import dt as dt_util
 
@@ -24,6 +26,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 _KEY = "salus_comfort_rules"
+SIGNAL_COMFORT_STATUS = "salus_comfort_status"
 _OPTIONS = ("off", "level_1", "level_2", "level_3")
 _PHASES = {"starting", "running", "stopping", "uncertain_start", "uncertain_stop", "cooldown"}
 
@@ -95,6 +98,14 @@ def _load(path: str) -> dict:
     data = json.loads(target.read_text(encoding="utf-8"))
     if data.get("version") != 1 or not isinstance(data.get("rules"), dict) or not isinstance(data.get("devices"), dict):
         raise ValueError("Invalid comfort-rule storage")
+    if not isinstance(data.get("observations", {}), dict):
+        raise ValueError("Invalid comfort observations")
+    for entity, observed in data.get("observations", {}).items():
+        if not entity.startswith("select.") or not isinstance(observed, dict) or observed.get("level") not in _OPTIONS:
+            raise ValueError("Invalid observed comfort state")
+        for key in ("active_since", "last_off_at"):
+            if observed.get(key) is not None:
+                _number(observed[key])
     for key, config in data["rules"].items():
         normalized = _config(config)
         if normalized["rule_id"] != key:
@@ -165,9 +176,17 @@ class ComfortRules:
         @callback
         def changed(event) -> None:
             entity = event.data.get("entity_id", "")
+            old, new = event.data.get("old_state"), event.data.get("new_state")
+            if entity.startswith("automation.") and (old is None or new is None or old.state != new.state) and any(record["owner"] == entity for record in self.data["devices"].values()):
+                async_dispatcher_send(self.hass, SIGNAL_COMFORT_STATUS)
+                return
+            if entity.startswith("select.") and new is not None and new.state in _OPTIONS and (old is None or old.state != new.state):
+                entry = er.async_get(self.hass).async_get(entity)
+                if entry is not None and entry.platform == DOMAIN and entry.unique_id.endswith("_comfort_warm_floor"):
+                    self.hass.async_create_task(self.async_observe(entity, new.state, self._now()))
+                return
             if not entity.startswith("climate."):
                 return
-            old, new = event.data.get("old_state"), event.data.get("new_state")
             if new is None:
                 return
             if old is not None and old.state == new.state and all(old.attributes.get(key) == new.attributes.get(key) for key in ("current_temperature", "temperature_unit")):
@@ -176,6 +195,79 @@ class ComfortRules:
                 self.hass.async_create_task(self.async_room_limits(entity))
 
         self._cancel_room_listener = self.hass.bus.async_listen("state_changed", changed)
+
+    def _log(self, entity: str, message: str) -> None:
+        """Associate explanations with the floor entity's native HA activity."""
+        async_log_entry(self.hass, "Gulvkomfort", message, domain=DOMAIN, entity_id=entity)
+
+    async def async_observe(self, entity: str, level: str, observed_at: float | None = None) -> None:
+        """Persist first observed transitions, including changes outside the rule.
+
+        An already-active entity has no known physical switch-on timestamp.
+        Missing/unavailable states never count as Off or restart an active clock.
+        """
+        if level not in _OPTIONS:
+            return
+        async with self.lock:
+            if self._closed or self.load_error:
+                return
+            observations = self.data.setdefault("observations", {})
+            previous = observations.get(entity, {})
+            if previous.get("level") == level:
+                return
+            now = observed_at if observed_at is not None else self._now()
+            item = {**previous, "level": level}
+            if level == "off":
+                item.update(active_since=None, time_basis=None, last_off_at=now if previous.get("level") in _OPTIONS[1:] else previous.get("last_off_at"))
+                message = "Slukket registreret fra enheden."
+            elif previous.get("level") in (None, "off"):
+                basis = "observed_transition" if previous.get("level") == "off" else "already_active"
+                item.update(active_since=now, time_basis=basis)
+                message = "Tændt registreret fra enheden." if basis == "observed_transition" else "Opdaget allerede tændt; det oprindelige tændingstidspunkt er ukendt."
+            else:
+                message = "Ændret komfortniveau registreret fra enheden; den eksisterende tændingstid bevares."
+            observations[entity] = item
+            try:
+                await self._persist()
+            except HomeAssistantError:
+                if previous:
+                    observations[entity] = previous
+                else:
+                    observations.pop(entity, None)
+                _LOGGER.exception("Could not save observed comfort status for %s", entity)
+                return
+            if previous or level != "off":
+                label = "Fra" if level == "off" else f"Niveau {level[-1]}"
+                self._log(entity, f"{message} {label}.")
+            async_dispatcher_send(self.hass, SIGNAL_COMFORT_STATUS)
+
+    @callback
+    def entity_status(self, entity: str, reported_level: str | None = None) -> dict:
+        """Read-only diagnostics; never invent a start time or a stop promise."""
+        observed = self.data.get("observations", {}).get(entity, {})
+        record = self.data["devices"].get(entity, {})
+        owner = self.hass.states.get(record.get("owner", "automation.none"))
+        enabled = owner is not None and owner.state == "on"
+        scheduled = record.get("next_check_at") if record.get("cycle_mode") == "minimum" else record.get("deadline")
+        state = self.hass.states.get(entity)
+        level = reported_level if reported_level is not None else state.state if state is not None else None
+        running = record.get("phase") == "running" and level == record.get("level")
+        return {
+            "comfort_observed_on_at": self._time(observed.get("active_since")),
+            "comfort_on_time_basis": observed.get("time_basis"),
+            "comfort_last_off_at": self._time(observed.get("last_off_at")),
+            "comfort_rule": record.get("owner"),
+            "comfort_phase": record.get("phase"),
+            "comfort_automation_enabled": enabled if record else None,
+            "comfort_rule_started_at": self._time(record.get("started_at")),
+            "comfort_period_started_at": self._time(record.get("active_at")),
+            "comfort_next_check_at": self._time(scheduled) if running and enabled else None,
+            "comfort_scheduled_check_at": self._time(scheduled) if running else None,
+            "comfort_last_decision": record.get("last_decision"),
+            "comfort_last_reason": record.get("last_reason"),
+            "comfort_adopted": record.get("adopted", False),
+            "comfort_start_evidence": record.get("start_evidence"),
+        }
 
     async def async_room_limits(self, climate_entity: str) -> None:
         async with self.lock:
@@ -200,6 +292,9 @@ class ComfortRules:
 
     def _explain(self, entity: str, decision: str, explanation: str, command: str | None = None) -> None:
         """Record decisions in memory only, without changing the control path."""
+        record = self.data["devices"].get(entity)
+        if record is not None:
+            record.update(last_decision=decision, last_reason=explanation)
         if self._evaluation is None:
             return
         rooms = self._evaluation["rooms"]
@@ -328,12 +423,15 @@ class ComfortRules:
     async def _command(self, entity: str, option: str, record: dict) -> None:
         # The pending phase and original deadline reach disk BEFORE dispatch.
         await self._persist()
+        label = "Fra" if option == "off" else f"Niveau {option[-1]}"
+        self._log(entity, record.get("pending_reason", "Tændbetingelsen er opfyldt." if option != "off" else "Slukbetingelsen er opfyldt.") + f" Anmoder om {label}; afventer bekræftelse fra enheden. Regel: {record['owner']}.")
         try:
             await self.hass.services.async_call("select", "select_option", {"entity_id": entity, "option": option}, blocking=True)
         except Exception as error:
             record["phase"] = "uncertain_start" if option != "off" else "uncertain_stop"
             record["error"] = str(error)
             await self._persist()
+            self._log(entity, "Kommandoen kunne ikke bekræftes; ingen automatisk genafsendelse. Kontrollér enhedens status.")
             ir.async_create_issue(self.hass, DOMAIN, f"comfort_rule_{entity}", is_fixable=False, severity=ir.IssueSeverity.ERROR,
                                  translation_key="comfort_command_uncertain", translation_placeholders={"entity": entity})
             raise HomeAssistantError(f"Komfortkommando til {entity} er ikke bekræftet. Ingen automatisk genafsendelse.") from error
@@ -346,6 +444,7 @@ class ComfortRules:
         if record.get("cycle_mode") == "minimum":
             record["next_check_at"] = None
         await self._persist()
+        self._log(entity, f"Regelperioden er afsluttet. Ny automatisk start tidligst {self._time(record['restart_after'])}. Bekræftet niveau: {self._floor(entity)}.")
         ir.async_delete_issue(self.hass, DOMAIN, f"comfort_rule_{entity}")
 
     async def _advance(self, entity: str, record: dict, config: dict, temperature: float | None, *, allow_start: bool, stop_temperature: float | None = None) -> None:
@@ -370,6 +469,7 @@ class ComfortRules:
                 if record.get("cycle_mode") == "minimum" and record.get("active_at") is None:
                     self._begin_minimum(record, self._now())
                 await self._persist()
+                self._log(entity, f"Regelperioden er bekræftet aktiv. Næste stopvurdering: {self._time(record.get('next_check_at') or record.get('deadline')) or 'ved næste regelkørsel'}. Regel: {record['owner']}.")
             elif current == "off" and record.get("confirmed") and now >= record["settle_until"]:
                 await self._cooldown(entity, record)
                 self._explain(entity, "cooldown", "Rummet melder Fra efter start; minimumspausen er startet.")
@@ -391,6 +491,7 @@ class ComfortRules:
             removed = entity not in config["floor_entities"]
             if expired or warm or removed:
                 reason = "Maksimal køretid er udløbet." if expired else "Den aktuelle udetemperatur har nået slukgrænsen." if warm else "Rummet er fjernet fra reglen."
+                record["pending_reason"] = reason + (f" Ude nu: {stop_temperature:g} °C; slukgrænse: {config['stop_at']:g} °C." if warm else "")
                 self._explain(entity, "stopped", reason + " Gulvkomfort sættes til Fra.", "off")
                 record.update(phase="stopping", confirmed=False, settle_until=now + 30)
                 await self._command(entity, "off", record)
@@ -458,6 +559,7 @@ class ComfortRules:
         removed = entity not in config["floor_entities"]
         room_missing = config["use_room_minimum"] and room is None
         if removed or (stop_temperature is not None and stop_temperature >= config["stop_at"] and not held and not room_missing):
+            record["pending_reason"] = "Perioden er udløbet; rummet er fjernet fra reglen." if removed else f"Perioden er udløbet. Ude nu: {stop_temperature:g} °C, slukgrænse: {config['stop_at']:g} °C. Rummet behøver ikke fastholdelse."
             self._explain(entity, "stopped", "Perioden er udløbet, og rummet er fjernet fra reglen." if removed else "Perioden er udløbet, udetemperaturen har nået slukgrænsen, og dette rum behøver ikke fastholdelse.", "off")
             record.update(phase="stopping", confirmed=False, settle_until=now + 30)
             await self._command(entity, "off", record)
@@ -473,12 +575,14 @@ class ComfortRules:
         record["last_extension_reason"] = reason
         await self._persist()
         self._explain(entity, "extended", explanations[reason])
+        self._log(entity, explanations[reason] + f" Ude nu: {stop_temperature if stop_temperature is not None else 'ukendt'} °C; slukgrænse: {config['stop_at']:g} °C. Rum: {room if room is not None else 'ukendt'} °C. Næste stopvurdering: {self._time(record['next_check_at'])}.")
 
     async def _stop_at_room_limit(self, entity: str, record: dict, config: dict, room: float | None) -> bool:
         if not config["use_room_maximum"] or room is None or room < config["room_maximum"]:
             return False
         record.update(phase="stopping", confirmed=False, settle_until=self._now() + 30,
                       room_hold=False, last_stop_reason="room_maximum")
+        record["pending_reason"] = f"Rummet er {room:g} °C og har nået øvre grænse {config['room_maximum']:g} °C. Afbryder den beskyttede periode."
         self._explain(entity, "room_limit_stop", "Rummets øvre temperaturgrænse er nået. Gulvkomfort sættes straks til Fra, også under minimumløbetid eller forlængelse.", "off")
         await self._command(entity, "off", record)
         if self._floor(entity) == "off":
@@ -520,6 +624,11 @@ class ComfortRules:
 
     async def _start(self, entity: str, config: dict) -> None:
         now = self._now()
+        detail = self._evaluation.get("temperature_data", {}) if self._evaluation else {}
+        value = self._evaluation.get("temperature_c") if self._evaluation else None
+        outside_now = self._current_temperature(config)[0]
+        start_reason = (f"Laveste prognose de næste {config['forecast_hours']:g} timer: {value} °C ved {detail.get('minimum_at', 'ukendt tidspunkt')}; tændgrænse: under {config['start_below']:g} °C. "
+                        f"Prognose hentet: {detail.get('fetched_at', 'ukendt')}. Ude nu ved start: {outside_now if outside_now is not None else 'ukendt'} °C. Minimumperiode: {config['min_runtime_hours']:g} timer.") if config['source_mode'] == 'forecast' else f"Temperaturgrundlag: {value} °C; tændgrænse: under {config['start_below']:g} °C."
         if config["cycle_mode"] == "minimum":
             current = self._floor(entity)
             if not self._startable(config, current):
@@ -534,6 +643,11 @@ class ComfortRules:
             self._upgrade_minimum(record, config)
             record["adopted"] = adopted
             record["start_trigger_temperature_c"] = self._evaluation.get("temperature_c") if self._evaluation else None
+            record["pending_reason"] = start_reason
+            record["start_evidence"] = {"temperature_c": value, "source": config["source"], "forecast_hours": config["forecast_hours"],
+                                        "start_below_c": config["start_below"], "minimum_at": detail.get("minimum_at"),
+                                        "fetched_at": detail.get("fetched_at"), "source_mode": config["source_mode"],
+                                        "outdoor_at_start_c": outside_now, "from_cache": detail.get("from_cache")}
             previous_record = self.data["devices"].get(entity)
             self.data["devices"][entity] = record
             if adopted:
@@ -547,6 +661,7 @@ class ComfortRules:
                     else:
                         self.data["devices"][entity] = previous_record
                     raise
+                self._log(entity, start_reason + f" Overtager allerede aktiv komfort uden niveauændring. Minimumperioden starter nu; næste vurdering {self._time(record['next_check_at'])}. Regel: {record['owner']}.")
                 if await self._stop_at_room_limit(entity, record, config, self._room_temperature(entity)[0]):
                     return
                 self._explain(entity, "adopted", "Den opfyldte startbetingelse overtager dette allerede aktive rum. Det manuelle niveau bevares; minimumløbetiden starter nu uden skrivekommando.")
@@ -558,6 +673,7 @@ class ComfortRules:
                   "deadline": now + config["max_runtime_hours"] * 3600 if config["use_max_runtime"] else None,
                   "cooldown_hours": config["cooldown_hours"], "restart_after": None, "confirmed": False, "settle_until": now + 30}
         self.data["devices"][entity] = record
+        record["pending_reason"] = start_reason
         self._explain(entity, "started", "Temperaturgrundlaget er under tændgrænsen, rummet står på Fra, og ingen pause blokerer. Det valgte komfortniveau aktiveres.", config["level"])
         await self._command(entity, config["level"], record)
 
@@ -662,6 +778,7 @@ class ComfortRules:
 
     @callback
     def _schedule(self) -> None:
+        async_dispatcher_send(self.hass, SIGNAL_COMFORT_STATUS)
         if self._cancel:
             self._cancel()
             self._cancel = None

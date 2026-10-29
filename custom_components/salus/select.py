@@ -11,10 +11,12 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .coordinator import SalusConfigEntry, SalusDataUpdateCoordinator
 from .entity import SalusEntity, async_setup_salus_platform_entities
 from .floor_backup import mark_floor_backup_confirmed, persist_floor_backup
+from .comfort_rule import SIGNAL_COMFORT_STATUS
 
 PARALLEL_UPDATES = 1
 _OPTIONS = ("off", "level_1", "level_2", "level_3")
@@ -50,6 +52,18 @@ class SalusComfortWarmFloorSelect(SalusEntity, SelectEntity):
     def __init__(self, coordinator: SalusDataUpdateCoordinator, device_id: str) -> None:
         super().__init__(coordinator, device_id)
         self._attr_unique_id = f"{device_id}_comfort_warm_floor"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_COMFORT_STATUS, self.async_write_ha_state))
+        controller = self.hass.data.get("salus_comfort_rules")
+        if controller is not None and self.available:
+            await controller.async_observe(self.entity_id, self.current_option)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        controller = getattr(self, "hass", None) and self.hass.data.get("salus_comfort_rules")
+        return controller.entity_status(self.entity_id, self.current_option) if controller is not None and self.entity_id else {}
 
     @property
     def current_option(self) -> str | None:
