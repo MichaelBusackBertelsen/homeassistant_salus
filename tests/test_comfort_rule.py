@@ -14,6 +14,7 @@ from homeassistant.components.automation.config import (
     PLATFORM_SCHEMA,
 )
 from homeassistant.components.blueprint.models import Blueprint, BlueprintInputs
+from homeassistant.const import __version__
 from homeassistant.core import Context, HomeAssistant, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -343,8 +344,14 @@ async def test_forecast_failure_does_not_block_maximum_runtime(env):
     assert env["calls"][-1] == ("select.room", "off")
 
 
+def _minimum_blueprint_path():
+    """Validate each version's compatible form against its actual HA parser."""
+    suffix = "_legacy" if tuple(map(int, __version__.split(".")[:2])) < (2026, 11) else ""
+    return Path(__file__).resolve().parents[1] / f"blueprints/automation/salus_comfort_rule{suffix}.yaml"
+
+
 async def test_blueprint_has_help_for_every_input_and_valid_actions(env):
-    path = Path(__file__).resolve().parents[1] / "blueprints/automation/salus_comfort_rule.yaml"
+    path = _minimum_blueprint_path()
     blueprint = Blueprint(yaml_util.load_yaml_dict(str(path)), expected_domain="automation", schema=AUTOMATION_BLUEPRINT_SCHEMA)
     assert all(len(item["description"]) > 60 for item in blueprint.inputs.values())
     inputs = BlueprintInputs(blueprint, {"use_blueprint": {"path": str(path), "input": {"floor_entities": ["select.room"], "source": "weather.test", "source_mode": "current"}}})
@@ -466,7 +473,7 @@ async def test_actual_blueprint_returns_visible_trace_variables_and_old_calls_wo
     try:
         # Existing b9 blueprints do not request a response and must keep working.
         await hass.services.async_call("salus", "evaluate_comfort_rule", CONFIG, blocking=True)
-        path = Path(__file__).resolve().parents[1] / "blueprints/automation/salus_comfort_rule.yaml"
+        path = _minimum_blueprint_path()
         blueprint = Blueprint(yaml_util.load_yaml_dict(str(path)), expected_domain="automation", schema=AUTOMATION_BLUEPRINT_SCHEMA)
         inputs = BlueprintInputs(blueprint, {"use_blueprint": {"path": str(path), "input": {"floor_entities": ["select.room"], "source": "weather.test", "source_mode": "current", "use_max_runtime": False, "max_runtime_hours": 8}}})
         config = inputs.async_substitute()
@@ -489,7 +496,7 @@ async def test_actual_blueprint_returns_visible_trace_variables_and_old_calls_wo
 
 
 async def test_blueprint_groups_sources_and_forces_forecast_even_with_old_saved_mode(env):
-    path = Path(__file__).resolve().parents[1] / "blueprints/automation/salus_comfort_rule.yaml"
+    path = _minimum_blueprint_path()
     raw = yaml_util.load_yaml_dict(str(path))
     sections = raw['blueprint']['input']
     assert list(sections) == ['weather', 'rooms', 'start', 'stop', 'indoor', 'manual']

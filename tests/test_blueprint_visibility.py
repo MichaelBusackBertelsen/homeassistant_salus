@@ -23,7 +23,7 @@ async def test_saved_room_limits_resolve_with_conditional_form(tmp_path, enabled
     try:
         path = (
             Path(__file__).resolve().parents[1]
-            / "blueprints/automation/salus_comfort_rule_conditional.yaml"
+            / "blueprints/automation/salus_comfort_rule.yaml"
         )
         raw = yaml_util.load_yaml_dict(str(path))
         bp = Blueprint(
@@ -56,5 +56,28 @@ async def test_saved_room_limits_resolve_with_conditional_form(tmp_path, enabled
         assert data["room_minimum"] == (20 if enabled else 21)
         assert data["room_margin"] == (0.7 if enabled else 0.5)
         assert data["room_maximum"] == (24 if enabled else 25)
+    finally:
+        await hass.async_stop()
+
+
+async def test_in_place_update_keeps_saved_keys_defaults_and_control_flow(tmp_path):
+    """Re-import requires no new automation, renamed inputs or changed service calls."""
+    hass = HomeAssistant(str(tmp_path))
+    try:
+        root = Path(__file__).resolve().parents[1] / "blueprints/automation"
+        current = yaml_util.load_yaml_dict(str(root / "salus_comfort_rule.yaml"))
+        legacy = yaml_util.load_yaml_dict(str(root / "salus_comfort_rule_legacy.yaml"))
+        current_meta = current.pop("blueprint")
+        legacy_meta = legacy.pop("blueprint")
+        assert current == legacy
+        for section, metadata in current_meta["input"].items():
+            assert (
+                metadata["input"].keys()
+                == legacy_meta["input"][section]["input"].keys()
+            )
+            for key, item in metadata["input"].items():
+                old_item = legacy_meta["input"][section]["input"][key]
+                assert {k: v for k, v in item.items() if k != "visible"} == old_item
+        assert current_meta["source_url"].endswith("/salus_comfort_rule.yaml")
     finally:
         await hass.async_stop()

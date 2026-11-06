@@ -2,10 +2,10 @@ blueprint:
   name: SALUS – enkel gulvkomfort med slukgrænse og pause
   description: Vejrudsigten starter komforten. Efter minimumløbetiden vurderes aktuel udetemperatur ved hver
     periodegrænse. Rumminimum, overtagelse og timer gælder separat pr. rum. Kræver SALUS b13 eller nyere. En
-    valgfri øvre rumgrænse kan afbryde minimumperiode og forlængelser straks.
+    valgfri øvre rumgrænse kan afbryde minimumperiode og forlængelser straks. Temperaturfelter vises kun, når den tilhørende funktion er slået til. Formularen kræver Home Assistant 2026.11; SALUS b15 kan fortsat bruges.
   domain: automation
   homeassistant:
-    min_version: 2024.11.0
+    min_version: 2026.11.0
   source_url: https://github.com/MichaelBusackBertelsen/homeassistant_salus/blob/feature/floor-dashboard/blueprints/automation/salus_comfort_rule.yaml
   input:
     weather:
@@ -144,6 +144,9 @@ blueprint:
           selector:
             boolean: {}
         room_minimum:
+          visible:
+            field: use_room_minimum
+            value: true
           name: Minimum rumtemperatur
           description: 'Fx 21 °C: Kommer et aktivt rum under grænsen, kan det holde komforten aktiv. Hvert
             rum vurderes separat, selv om grænsen er fælles.'
@@ -156,6 +159,9 @@ blueprint:
               unit_of_measurement: °C
               mode: box
         room_margin:
+          visible:
+            field: use_room_minimum
+            value: true
           name: Buffer før rumfastholdelse frigives
           description: 'Fx minimum 21 °C og buffer 0,5 °C: Har rummet udløst fastholdelse, frigives den ved
             21,5 °C. Stop kan først ske ved næste periodegrænse.'
@@ -176,6 +182,9 @@ blueprint:
           selector:
             boolean: {}
         room_maximum:
+          visible:
+            field: use_room_maximum
+            value: true
           name: Øvre rumtemperatur – sluk straks ved
           description: 'Fx 25 °C: Ved eller over grænsen sendes Fra ved næste gyldige måling fra rummets egen
             termostat. Har du også rumminimum, skal grænsen være over minimum plus buffer.'
